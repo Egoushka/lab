@@ -10,6 +10,7 @@ a real project), **killed** (the stop rule hit) or **open**.
 | # | Experiment | Question | State |
 |---|---|---|---|
 | 01 | [agent-views](experiments/01-agent-views/) | Does a cut-down view of a file beat a token-cheap syntax (CSV, TOON) for AI reading? | open |
+| 02 | [picked-fields](experiments/02-picked-fields/) | Does the view still win when the agent picks its own fields, counting both calls? | open |
 
 ## Rules
 

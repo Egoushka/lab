@@ -11,6 +11,7 @@ a real project), **killed** (the stop rule hit) or **open**.
 |---|---|---|---|
 | 01 | [agent-views](experiments/01-agent-views/) | Does a cut-down view of a file beat a token-cheap syntax (CSV, TOON) for AI reading? | open |
 | 02 | [picked-fields](experiments/02-picked-fields/) | Does the view still win when the agent picks its own fields, counting both calls? | open |
+| 03 | [vague-questions](experiments/03-vague-questions/) | Does the pick still work when the question does not name its fields? | killed |
 
 ## Rules
 

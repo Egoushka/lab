@@ -19,7 +19,7 @@ data (measured 2026-11-07: a one-line prompt came back as 872).
     `{"fields": [...]}`. The harness builds the view from that list with 01's `to_view`, the same projection and
     remote rule; `name` is always included. **Call 2** reads that view and the question, as in 01.
 - Names that are not fields are dropped and counted. There is no fallback to the full file: a bad pick stays bad.
-  An empty pick goes on as `name` only.
+  An empty pick, or a reply that is no field list, goes on as `name` only.
 - Tokens are Claude's own, from the usage report: input tokens as in 01 (new, cache write and cache read added),
   output tokens counted apart. For `picked`, the two calls are summed.
 

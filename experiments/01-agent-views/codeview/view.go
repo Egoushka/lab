@@ -64,13 +64,14 @@ func classify(header string) int {
 	return kindBody
 }
 
-var listHeadRe = regexp.MustCompile(`^(import\b.*|export(\s+type)?)$`)
+var listHeadRe = regexp.MustCompile(`^(import\b[^(]*|export(\s+type)?)$`)
 
 // keepBrace reports whether the '{' after header is part of a signature or an
 // import/export list rather than a body: a brace inside open parens that follows
-// one of ( , : | & < = (a destructured or typed parameter), or one whose last line
+// one of ( , : | & < = inside a parameter list (inSig: the innermost open paren is
+// followed by `{`, `:` or `=>` once closed, so `f({` as a call argument does not count), or one whose last line
 // starts an import or an export list.
-func keepBrace(header string, parens int) bool {
+func keepBrace(header string, inSig bool) bool {
 	h := strings.TrimRight(header, " \t\r\n")
 	if i := strings.LastIndexByte(h, '\n'); i >= 0 {
 		h = h[i+1:]
@@ -79,7 +80,29 @@ func keepBrace(header string, parens int) bool {
 	if listHeadRe.MatchString(h) {
 		return true
 	}
-	return parens > 0 && h != "" && strings.IndexByte("(,:|&<=", h[len(h)-1]) >= 0
+	return inSig && h != "" && strings.IndexByte("(,:|&<=", h[len(h)-1]) >= 0
+}
+
+// declParen reports whether the paren opened at i closes into a parameter list: what
+// follows is `{`, `:` or `=>`, not `;`, `)`, `,` or `.` as after a call.
+func declParen(m []byte, i int) bool {
+	depth := 0
+	for j := i; j < len(m); j++ {
+		switch m[j] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				k := j + 1
+				for k < len(m) && (m[k] == ' ' || m[k] == '\t' || m[k] == '\n' || m[k] == '\r') {
+					k++
+				}
+				return k < len(m) && (m[k] == '{' || m[k] == ':' || m[k] == '=' && k+1 < len(m) && m[k+1] == '>')
+			}
+		}
+	}
+	return false
 }
 
 func normalize(src []byte) string {
@@ -91,22 +114,24 @@ func elisions(m []byte, match map[int]int) []span {
 	var walk func(a, b int, all bool)
 	walk = func(a, b int, all bool) {
 		boundary := a
-		parens := 0
+		var open []int
 		for i := a; i < b; i++ {
 			switch m[i] {
 			case '(':
-				parens++
+				open = append(open, i)
 			case ')':
-				parens = max(parens-1, 0)
+				if len(open) > 0 {
+					open = open[:len(open)-1]
+				}
 			case ';', '}':
 				boundary = i + 1
-				parens = 0
+				open = open[:0]
 			case '{':
 				cl := match[i]
 				header := stripAttrs(string(m[boundary:i]))
 				kind := classify(header)
 				switch {
-				case all || kind != kindBody || keepBrace(header, parens):
+				case all || kind != kindBody || keepBrace(header, len(open) > 0 && declParen(m, open[len(open)-1])):
 					walk(i+1, cl, all || kind == kindTypeOnly)
 				case cl-i > 100 || strings.IndexByte(string(m[i+1:cl]), '\n') >= 0:
 					out = append(out, span{i + 1, cl})

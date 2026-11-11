@@ -88,7 +88,7 @@ func csSymbols(l string) []string {
 	if o := csOper.FindStringSubmatch(rest); o != nil {
 		return []string{"operator " + o[1]}
 	}
-	if loc := csIdx.FindStringIndex(rest); loc != nil && !strings.Contains(rest[:loc[0]], "(") {
+	if loc := csIdx.FindStringIndex(rest); loc != nil && !strings.ContainsAny(rest[:loc[0]], "(={") {
 		return []string{"this"}
 	}
 	if i := strings.IndexByte(rest, ';'); i >= 0 {
@@ -129,6 +129,7 @@ type tsState struct {
 	stack        []byte // 'c' class body, 'b' any other brace, paren or bracket
 	pendingClass bool
 	inExport     bool // inside a multi-line `export { ... }` list
+	cont         bool // previous line ended mid-expression
 }
 
 func (s *tsState) line(l string) []string {
@@ -143,7 +144,7 @@ func (s *tsState) line(l string) []string {
 		names = []string{tsExp.FindStringSubmatch(l)[1]}
 	case tsDef.MatchString(l):
 		names = []string{"default"}
-	case atClass:
+	case atClass && !s.cont:
 		if m := tsMem.FindStringSubmatch(l); m != nil && m[1] != "private" && m[2] != "constructor" {
 			names = []string{m[2]}
 		}
@@ -151,11 +152,23 @@ func (s *tsState) line(l string) []string {
 	if tsClass.MatchString(l) {
 		s.pendingClass = true
 	}
+	if t := strings.TrimSpace(l); t != "" {
+		s.cont = strings.IndexByte("+-*/&|=?:,(.", t[len(t)-1]) >= 0
+	}
+	ang := 0
 	for i := 0; i < len(l); i++ {
 		switch l[i] {
+		case '<':
+			if s.pendingClass {
+				ang++
+			}
+		case '>':
+			if ang > 0 && (i == 0 || l[i-1] != '=') {
+				ang--
+			}
 		case '{':
 			k := byte('b')
-			if s.pendingClass {
+			if s.pendingClass && ang == 0 {
 				// only top-level classes are public API; a class inside a function body is local
 				if len(s.stack) == 0 {
 					k = 'c'
@@ -246,18 +259,18 @@ func SignatureBreaks(view string, lang Lang) int {
 		head := strings.TrimSpace(string(masked[strings.LastIndexByte(text[:brace], '\n')+1 : brace]))
 		// innermost open bracket before the brace: object-literal values inside a call
 		// (`defineConfig({ a: {`) sit in a '{', a parameter type (`({ a }: {`) sits in the '('.
-		var open []byte
-		for _, c := range masked[:brace] {
+		var open []int
+		for i, c := range masked[:brace] {
 			switch c {
 			case '(', '{', '[':
-				open = append(open, c)
+				open = append(open, i)
 			case ')', '}', ']':
 				if len(open) > 0 {
 					open = open[:len(open)-1]
 				}
 			}
 		}
-		inParens := len(open) > 0 && open[len(open)-1] == '('
+		inParens := len(open) > 0 && masked[open[len(open)-1]] == '(' && declParen(masked, open[len(open)-1])
 		before := strings.TrimSpace(string(masked[:brace]))
 		if listHeadRe.MatchString(head) ||
 			inParens && before != "" && strings.IndexByte("(,:|&<=", before[len(before)-1]) >= 0 {

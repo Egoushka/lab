@@ -79,7 +79,8 @@ number was "about half".
   lists left whole ("Cut signatures", from the view text alone). It does not cover: members of classes nested
   in functions or namespaces (not public API, skipped on both sides), return-type object literals
   (`): Promise<{ ... }> {` may still be elided), a C# `a < b` inside a field initializer (confuses the comma
-  split), or anything about body content. The signature check shares its import/export pattern with the cut,
+  split; `<` and `<<` also confuse it), a class member on a line that continues an expression (guarded only
+  by the previous line ending in an operator), or anything about body content. The signature check shares its import/export pattern with the cut,
   so it is not fully independent of it.
 
 **Result (2026-11-11, lab `4062de7` plus the review fixes; repos at chargehand `d9e29ac`, workspace `1a8225b`,
@@ -88,10 +89,10 @@ personal-website `bc769d7`).**
 | Repo | Lang | Files | Tokens kept (pieces) | Tokens kept (bytes/4) | Symbols | Found in view | Exact files | Cut signatures |
 |---|---|---|---|---|---|---|---|---|
 | chargehand | C# | 1019 | 50.7% | 45.4% | 10124 | 100.00% | 100.0% | 0 |
-| chargehand | TS | 256 | 32.0% | 26.8% | 1198 | 100.00% | 100.0% | 0 |
+| chargehand | TS | 256 | 30.8% | 25.8% | 1198 | 100.00% | 100.0% | 0 |
 | workspace | C# | 15 | 44.0% | 37.4% | 221 | 100.00% | 100.0% | 0 |
 | workspace | TS | 4 | 42.0% | 39.1% | 9 | 100.00% | 100.0% | 0 |
-| personal-website | TS | 119 | 35.0% | 31.3% | 332 | 100.00% | 100.0% | 0 |
+| personal-website | TS | 119 | 34.6% | 30.8% | 332 | 100.00% | 100.0% | 0 |
 
 No file fell back to the full text. All gutter lines match the original (about 60,000). Viewing all of
 chargehand's C# takes about 0.3 s. The first version of this table (extractor covering only explicit

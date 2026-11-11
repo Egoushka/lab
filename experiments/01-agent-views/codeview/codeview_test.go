@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -329,7 +330,7 @@ func TestTypeScriptSymbolGaps(t *testing.T) {
 	for _, s := range SymbolsOfView(v, TypeScript) {
 		vs[s.Name] = true
 	}
-	if len(vs) != len(got) {
+	if fmt.Sprint(vs) != fmt.Sprint(got) {
 		t.Errorf("view symbols %v differ from source %v", vs, got)
 	}
 }
@@ -362,5 +363,26 @@ func TestSignaturesIntactCheck(t *testing.T) {
 		if SignatureBreaks(bad, TypeScript) == 0 {
 			t.Errorf("cut signature not detected: %s", bad)
 		}
+	}
+}
+
+func TestCallArgumentObjectsAreElided(t *testing.T) {
+	src := "app.use(cors({\n  origin: a,\n  credentials: true,\n}));\nimport('./x').then((m) => {\n  m.run();\n  work();\n});\n"
+	v := mustView(t, src, TypeScript, false)
+	for _, s := range []string{"origin", "m.run", "work()"} {
+		if strings.Contains(v, s) {
+			t.Errorf("%q kept in %q", s, v)
+		}
+	}
+}
+
+func TestSymbolExtractorEdgeCases(t *testing.T) {
+	ts := symNames("export class Store<T extends { id: string }> {\n  load() {\n    x();\n  }\n}\nclass K {\n  total = first +\n    second;\n}\n", TypeScript)
+	if !ts["load"] || ts["second"] {
+		t.Errorf("ts symbols %v", ts)
+	}
+	cs := symNames("public class C\n{\n    public string Name => this[\"n\"];\n}\n", CSharp)
+	if !cs["Name"] || cs["this"] {
+		t.Errorf("cs symbols %v", cs)
 	}
 }

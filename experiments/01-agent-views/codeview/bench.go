@@ -10,13 +10,13 @@ import (
 )
 
 type agg struct {
-	files, unparsed, perfect                  int
-	bytesIn, bytesView                        int
-	b4In, b4View, b4ViewNoNum                 int
-	pcIn, pcView, pcViewNoNum                 int
-	symOrig, symFound, symExtra               int
-	gutOK, gutTotal                           int
-	elapsed                                   time.Duration
+	files, unparsed, perfect    int
+	bytesIn, bytesView          int
+	b4In, b4View, b4ViewNoNum   int
+	pcIn, pcView, pcViewNoNum   int
+	symOrig, symFound, symExtra int
+	gutOK, gutTotal, sigBreaks  int
+	elapsed                     time.Duration
 }
 
 func (a *agg) pct(in, out int) float64 {
@@ -27,8 +27,8 @@ func (a *agg) pct(in, out int) float64 {
 }
 
 func bench(repos []string) {
-	fmt.Println("| Repo | Lang | Files | Unparsed | Bytes kept | Tokens kept (pieces) | Tokens kept (bytes/4) | Tokens kept, no gutter (pieces) | Symbols | Found in view | Exact files |")
-	fmt.Println("|---|---|---|---|---|---|---|---|---|---|---|")
+	fmt.Println("| Repo | Lang | Files | Unparsed | Bytes kept | Tokens kept (pieces) | Tokens kept (bytes/4) | Tokens kept, no gutter (pieces) | Symbols | Found in view | Exact files | Cut signatures |")
+	fmt.Println("|---|---|---|---|---|---|---|---|---|---|---|---|")
 	for _, repo := range repos {
 		out, err := exec.Command("git", "-C", repo, "ls-files", "-z").Output()
 		check(err)
@@ -80,6 +80,7 @@ func bench(repos []string) {
 			ok2, tot := GutterFaithful(src, vn)
 			a.gutOK += ok2
 			a.gutTotal += tot
+			a.sigBreaks += SignatureBreaks(vn, lang)
 		}
 		for _, l := range []Lang{CSharp, TypeScript} {
 			a := per[l]
@@ -87,10 +88,10 @@ func bench(repos []string) {
 				continue
 			}
 			name := map[Lang]string{CSharp: "C#", TypeScript: "TS"}[l]
-			fmt.Printf("| %s | %s | %d | %d | %.1f%% | %.1f%% | %.1f%% | %.1f%% | %d | %.2f%% | %.1f%% |\n",
+			fmt.Printf("| %s | %s | %d | %d | %.1f%% | %.1f%% | %.1f%% | %.1f%% | %d | %.2f%% | %.1f%% | %d |\n",
 				filepath.Base(repo), name, a.files, a.unparsed,
 				a.pct(a.bytesIn, a.bytesView), a.pct(a.pcIn, a.pcView), a.pct(a.b4In, a.b4View), a.pct(a.pcIn, a.pcViewNoNum),
-				a.symOrig, 100*float64(a.symFound)/float64(max(a.symOrig, 1)), a.pct(a.files-a.unparsed, a.perfect))
+				a.symOrig, 100*float64(a.symFound)/float64(max(a.symOrig, 1)), a.pct(a.files-a.unparsed, a.perfect), a.sigBreaks)
 			fmt.Fprintf(os.Stderr, "%s %s: gutter lines faithful %d/%d, extra symbols in view %d, view time %s\n",
 				filepath.Base(repo), name, a.gutOK, a.gutTotal, a.symExtra, a.elapsed.Round(time.Millisecond))
 		}

@@ -64,20 +64,49 @@ func classify(header string) int {
 	return kindBody
 }
 
+var listHeadRe = regexp.MustCompile(`^(import\b.*|export(\s+type)?)$`)
+
+// keepBrace reports whether the '{' after header is part of a signature or an
+// import/export list rather than a body: a brace inside open parens that follows
+// one of ( , : | & < = (a destructured or typed parameter), or one whose last line
+// starts an import or an export list.
+func keepBrace(header string, parens int) bool {
+	h := strings.TrimRight(header, " \t\r\n")
+	if i := strings.LastIndexByte(h, '\n'); i >= 0 {
+		h = h[i+1:]
+	}
+	h = strings.TrimSpace(h)
+	if listHeadRe.MatchString(h) {
+		return true
+	}
+	return parens > 0 && h != "" && strings.IndexByte("(,:|&<=", h[len(h)-1]) >= 0
+}
+
+func normalize(src []byte) string {
+	return strings.ReplaceAll(strings.TrimPrefix(string(src), "\xEF\xBB\xBF"), "\r\n", "\n")
+}
+
 func elisions(m []byte, match map[int]int) []span {
 	var out []span
 	var walk func(a, b int, all bool)
 	walk = func(a, b int, all bool) {
 		boundary := a
+		parens := 0
 		for i := a; i < b; i++ {
 			switch m[i] {
+			case '(':
+				parens++
+			case ')':
+				parens = max(parens-1, 0)
 			case ';', '}':
 				boundary = i + 1
+				parens = 0
 			case '{':
 				cl := match[i]
-				kind := classify(stripAttrs(string(m[boundary:i])))
+				header := stripAttrs(string(m[boundary:i]))
+				kind := classify(header)
 				switch {
-				case all || kind != kindBody:
+				case all || kind != kindBody || keepBrace(header, parens):
 					walk(i+1, cl, all || kind == kindTypeOnly)
 				case cl-i > 100 || strings.IndexByte(string(m[i+1:cl]), '\n') >= 0:
 					out = append(out, span{i + 1, cl})
@@ -96,7 +125,7 @@ func elisions(m []byte, match map[int]int) []span {
 // line range. Blank lines are dropped. On unbalanced braces (a lexer miss) it
 // returns an error so the caller can fall back to the full file.
 func View(src []byte, lang Lang, opt Options) (string, error) {
-	text := strings.ReplaceAll(string(src), "\r\n", "\n")
+	text := normalize(src)
 	b := []byte(text)
 	m := Mask(b, lang)
 	match, err := matchBraces(m)

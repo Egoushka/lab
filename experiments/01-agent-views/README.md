@@ -35,3 +35,66 @@ uv run bench.py report runs/<file>.jsonl --write               # aggregates to r
 ```
 
 **Results.** See [results/](results/). The raw answers stay in `runs/` (git-ignored) because they quote the data.
+
+## Part 2 · code views (`codeview/`)
+
+**Hypothesis.** The same idea works on source code: an agent that reads a cut-down view of a C# or TypeScript
+file (types, signatures, doc comments, bodies elided behind a marker that keeps the original line range) sees
+every public symbol at its real line, for about half the tokens of the full file.
+
+**Tool.** `codeview view FILE` prints the view; `codeview bench REPO...` measures it over the git-tracked
+files of each repo. Each kept line carries a gutter `N| ` with its original line number; an elided body becomes
+`{ /*…14-18*/ }`. Interfaces, enums and type aliases are kept whole. Blank lines are dropped. If braces do not
+balance the tool returns an error and the caller reads the full file.
+
+Language: Go. One static binary with no dependencies, starts in about a millisecond (the agent calls it per
+file), and the standard library is enough. Rust would be as good; C# would need a runtime or AOT for the same
+start time and would be a bigger tool for a lexer and a brace matcher. It is a lexer, not a parser: comments,
+strings and regex literals are masked first, then braces are matched, so it needs no Roslyn or TypeScript
+compiler and does not check that the code compiles.
+
+**Check (it works).** On every repo and language measured, the view uses at most 55% of the original tokens
+(pieces proxy, gutter included) and 99% or more of the public symbols are found at the same line in the view.
+Those thresholds were set after a first run showed about 50% for C#, not before it; the first pre-registered
+number was "about half".
+**Stop.** Symbol recall under 95%, or more than 80% of the tokens kept, on any repo.
+**Cost.** $0. No model is called.
+
+**How measured.** `go run . bench REPO...` from `codeview/`, on the tracked `.cs`, `.ts` and `.tsx` files
+(`.d.ts` excluded).
+- Tokens: no offline Claude tokenizer exists, so two proxies are shown. `pieces` splits identifiers at case
+  changes, digit runs, punctuation runs and whitespace runs; `bytes/4` is the common rule of thumb. Absolute
+  counts are not Claude's; the kept ratio is what matters. The Part 1 note applies: Claude's tokenizer counts
+  more than the proxy, and more so on code, so treat the ratios as approximate.
+- Correctness proxy, no model: a symbol extractor lists public, protected and internal declarations in C#, and
+  `export` plus public or protected members in TypeScript, as (name, line) pairs. It runs on the original file
+  and on the view (lines read from the gutter). "Found in view" is the share of original pairs also in the
+  view. "Exact files" is the share of files whose two sets are identical. A second check confirms every
+  gutter line is the start of the original line with that number.
+- Limitation: the extractor and the view share one lexer, so a mask bug could hide in both. The check proves
+  the cut does not drop declarations; it does not prove a model answers better with the view. Part 1 is
+  the only evidence on accuracy.
+
+**Result (2026-11-11, lab `de1a180` plus this change; repos at chargehand `3a25481`, workspace `1a8225b`,
+personal-website `bc769d7`).**
+
+| Repo | Lang | Files | Tokens kept (pieces) | Tokens kept (bytes/4) | Symbols | Found in view | Exact files |
+|---|---|---|---|---|---|---|---|
+| chargehand | C# | 1017 | 50.7% | 45.4% | 10092 | 100.00% | 100.0% |
+| chargehand | TS | 256 | 29.2% | 24.3% | 1115 | 100.00% | 100.0% |
+| workspace | C# | 15 | 44.0% | 37.4% | 219 | 100.00% | 100.0% |
+| workspace | TS | 4 | 42.0% | 39.1% | 9 | 100.00% | 100.0% |
+| personal-website | TS | 119 | 33.8% | 30.1% | 331 | 100.00% | 100.0% |
+
+No file fell back to the full text. All 57,847 gutter lines match the original (chargehand C# 46,071 and TS
+7,767; workspace 876 and 48; personal-website 3,085). Viewing all of chargehand's C# takes about 0.5 s.
+
+**Verdict.** The check passed (worst row 50.7%, recall 100% everywhere) and the stop was not hit. The 100% is
+a statement about declarations, not about answers: a model still has to be tested on the view, which needs
+paid calls and is a separate session. C# keeps more than TS because of attributes, expression-bodied members
+and one-line bodies that stay inline.
+
+**Run.**
+```sh
+cd codeview && go test ./... && go run . bench ~/work/chargehand ~/work/workspace
+```

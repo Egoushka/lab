@@ -1,0 +1,22 @@
+name: codeview
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths: ["experiments/01-agent-views/codeview/**", ".github/workflows/codeview.yml"]
+permissions:
+  contents: read
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: experiments/01-agent-views/codeview
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: experiments/01-agent-views/codeview/go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build ./...

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -231,5 +232,157 @@ func TestLangOf(t *testing.T) {
 		if _, ok := LangOf(name); ok != want {
 			t.Errorf("%s: %v", name, ok)
 		}
+	}
+}
+
+func symNames(src string, lang Lang) map[string]bool {
+	got := map[string]bool{}
+	for _, s := range SymbolsOfSource([]byte(src), lang) {
+		got[s.Name] = true
+	}
+	return got
+}
+
+func TestBracesInSignaturesAreKept(t *testing.T) {
+	src := "export default function RootLayout({\n  children,\n}: {\n  children: React.ReactNode;\n}) {\n  return <p/>;\n}\n"
+	v := mustView(t, src, TypeScript, false)
+	for _, want := range []string{"RootLayout({", "children,", "}: {", "children: React.ReactNode;"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("view lacks %q\n%s", want, v)
+		}
+	}
+	if strings.Contains(v, "return <p/>") || !strings.Contains(v, "/*…") {
+		t.Errorf("body should still be elided\n%s", v)
+	}
+}
+
+func TestImportAndExportListsAreKept(t *testing.T) {
+	src := "import {\n  a,\n  b,\n} from './x';\nimport type {\n  C,\n  D,\n} from './y';\nexport {\n  a,\n  b,\n};\nexport type {\n  C,\n  D,\n};\n"
+	v := mustView(t, src, TypeScript, false)
+	if strings.Contains(v, "/*…") {
+		t.Errorf("a list was elided\n%s", v)
+	}
+	for _, n := range []string{"a,", "b,", "C,", "D,"} {
+		if !strings.Contains(v, n) {
+			t.Errorf("view lacks %q\n%s", n, v)
+		}
+	}
+}
+
+func TestCallbackBodiesInParensStillElided(t *testing.T) {
+	src := "describe('x', () => {\n  it('y', function () {\n    run();\n  });\n  work();\n});\n"
+	v := mustView(t, src, TypeScript, false)
+	if strings.Contains(v, "work()") || strings.Contains(v, "run()") {
+		t.Errorf("callback body kept\n%s", v)
+	}
+}
+
+func TestRegexAfterArrow(t *testing.T) {
+	src := "const f = (s) => /\\{/.test(s);\nexport function bar() {\n  return 1;\n  // x\n}\nconst g = /\\}/;\n"
+	v := mustView(t, src, TypeScript, false)
+	if !strings.Contains(v, "export function bar()") {
+		t.Errorf("bar vanished\n%s", v)
+	}
+}
+
+func TestBOMIsStripped(t *testing.T) {
+	src := "\xEF\xBB\xBFpublic class A\n{\n    public int M()\n    {\n        return 1;\n    }\n}\n"
+	v := mustView(t, src, CSharp, true)
+	if strings.Contains(v, "\xEF\xBB\xBF") {
+		t.Errorf("BOM in view %q", v)
+	}
+	if !strings.Contains(v, "1| public class A") {
+		t.Errorf("line 1 wrong %q", v)
+	}
+	if !symNames(src, CSharp)["A"] {
+		t.Error("class A on line 1 not found after BOM")
+	}
+	if ok, total := GutterFaithful([]byte(src), v); ok != total {
+		t.Errorf("gutter %d/%d", ok, total)
+	}
+}
+
+func TestCharLiteralEscapedQuote(t *testing.T) {
+	src := "var d = '\\'';"
+	if got := string(Mask([]byte(src), CSharp)); strings.TrimSpace(got) != "var d =     ;" {
+		t.Errorf("mask left %q", got)
+	}
+}
+
+func TestTypeScriptSymbolGaps(t *testing.T) {
+	src := "export class K {\n  plain = 1;\n  load(): void {\n    x();\n  }\n  static make() {\n    return 1;\n  }\n  get size() {\n    return 2;\n  }\n  private hidden = 1;\n  #secret = 2;\n  constructor(\n    id: string,\n  ) {\n    y();\n  }\n}\n" +
+		"export default class {\n  m() {\n    z();\n  }\n}\n" +
+		"export { a, b as c };\nexport type { T };\nexport {\n  d,\n  e,\n};\n" +
+		"export const enum Color {\n  Red,\n}\n"
+	got := symNames(src, TypeScript)
+	for _, n := range []string{"plain", "load", "make", "size", "default", "m", "a", "c", "T", "d", "e", "Color", "K"} {
+		if !got[n] {
+			t.Errorf("missing %s in %v", n, got)
+		}
+	}
+	for _, n := range []string{"enum", "hidden", "#secret", "secret", "constructor", "id", "b"} {
+		if got[n] {
+			t.Errorf("bogus %s in %v", n, got)
+		}
+	}
+	v := mustView(t, src, TypeScript, true)
+	vs := map[string]bool{}
+	for _, s := range SymbolsOfView(v, TypeScript) {
+		vs[s.Name] = true
+	}
+	if fmt.Sprint(vs) != fmt.Sprint(got) {
+		t.Errorf("view symbols %v differ from source %v", vs, got)
+	}
+}
+
+func TestCSharpSymbolGaps(t *testing.T) {
+	src := "public class C\n{\n    public U this[int i]\n    {\n        get { return default; }\n    }\n    public const int K = 1, L = 2;\n    public static implicit operator int(C c)\n    {\n        return 1;\n    }\n    public static C operator +(C a, C b)\n    {\n        return a;\n    }\n    public void M(int a, int b)\n    {\n    }\n}\n"
+	got := symNames(src, CSharp)
+	for _, n := range []string{"C", "this", "K", "L", "operator int", "operator +", "M"} {
+		if !got[n] {
+			t.Errorf("missing %s in %v", n, got)
+		}
+	}
+	for _, n := range []string{"int", "b"} {
+		if got[n] {
+			t.Errorf("bogus %s in %v", n, got)
+		}
+	}
+}
+
+func TestSignaturesIntactCheck(t *testing.T) {
+	good := mustView(t, "export default function L({\n  a,\n}: {\n  a: number;\n}) {\n  return 1;\n}\nimport {\n  x,\n} from 'y';\n", TypeScript, true)
+	if n := SignatureBreaks(good, TypeScript); n != 0 {
+		t.Errorf("good view flagged %d\n%s", n, good)
+	}
+	for _, bad := range []string{
+		"65| export default function RootLayout({ /*…65-67*/ }: { /*…67-69*/ }) { /*…69-71*/ }\n",
+		"1| import { /*…1-8*/ } from './x';\n",
+		"1| export { /*…1-4*/ };\n",
+	} {
+		if SignatureBreaks(bad, TypeScript) == 0 {
+			t.Errorf("cut signature not detected: %s", bad)
+		}
+	}
+}
+
+func TestCallArgumentObjectsAreElided(t *testing.T) {
+	src := "app.use(cors({\n  origin: a,\n  credentials: true,\n}));\nimport('./x').then((m) => {\n  m.run();\n  work();\n});\n"
+	v := mustView(t, src, TypeScript, false)
+	for _, s := range []string{"origin", "m.run", "work()"} {
+		if strings.Contains(v, s) {
+			t.Errorf("%q kept in %q", s, v)
+		}
+	}
+}
+
+func TestSymbolExtractorEdgeCases(t *testing.T) {
+	ts := symNames("export class Store<T extends { id: string }> {\n  load() {\n    x();\n  }\n}\nclass K {\n  total = first +\n    second;\n}\n", TypeScript)
+	if !ts["load"] || ts["second"] {
+		t.Errorf("ts symbols %v", ts)
+	}
+	cs := symNames("public class C\n{\n    public string Name => this[\"n\"];\n}\n", CSharp)
+	if !cs["Name"] || cs["this"] {
+		t.Errorf("cs symbols %v", cs)
 	}
 }

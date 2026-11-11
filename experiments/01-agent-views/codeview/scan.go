@@ -58,7 +58,7 @@ func (s *scanner) at(i int) byte {
 // an interpolation hole and returns its index.
 func (s *scanner) code(i int, inHole bool) int {
 	depth := 0
-	var lastSig byte // last significant (non-space) byte, for regex detection
+	var lastSig, prevSig byte // last two significant (non-space) bytes, for regex detection
 	lastWord := ""
 	for i < len(s.src) {
 		c := s.src[i]
@@ -91,15 +91,15 @@ func (s *scanner) code(i int, inHole bool) int {
 			if j, ok := s.str(i); ok {
 				s.blank(i, j)
 				i = j
-				lastSig = '"'
+				prevSig, lastSig = lastSig, '"'
 				lastWord = ""
 				continue
 			}
-		case c == '/' && s.lang == TypeScript && regexAllowed(lastSig, lastWord) && s.at(i+1) != '>':
+		case c == '/' && s.lang == TypeScript && regexAllowed(prevSig, lastSig, lastWord) && s.at(i+1) != '>':
 			if j, ok := s.regex(i); ok {
 				s.blank(i, j)
 				i = j
-				lastSig = '"'
+				prevSig, lastSig = lastSig, '"'
 				lastWord = ""
 				continue
 			}
@@ -114,11 +114,11 @@ func (s *scanner) code(i int, inHole bool) int {
 				j++
 			}
 			lastWord = string(s.src[i:j])
-			lastSig = 'a'
+			prevSig, lastSig = lastSig, 'a'
 			i = j
 			continue
 		}
-		lastSig = c
+		prevSig, lastSig = lastSig, c
 		lastWord = ""
 		i++
 	}
@@ -129,12 +129,12 @@ func isIdent(c byte) bool {
 	return c == '_' || c == '$' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
 }
 
-func regexAllowed(last byte, word string) bool {
+func regexAllowed(prev, last byte, word string) bool {
 	switch word {
 	case "return", "typeof", "case", "in", "of", "delete", "void", "throw", "new", "else":
 		return true
 	}
-	if last == 0 {
+	if last == 0 || prev == '=' && last == '>' {
 		return true
 	}
 	switch last {
@@ -225,7 +225,7 @@ func (s *scanner) str(i int) (int, bool) {
 			return 0, false
 		}
 		if s.at(j+1) == '\\' {
-			k := j + 2
+			k := j + 3 // j+2 is the escaped char; '\'' must not end there
 			for k < len(s.src) && s.src[k] != '\'' && s.src[k] != '\n' {
 				k++
 			}

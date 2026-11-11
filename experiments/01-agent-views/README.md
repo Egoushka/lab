@@ -66,30 +66,41 @@ number was "about half".
   changes, digit runs, punctuation runs and whitespace runs; `bytes/4` is the common rule of thumb. Absolute
   counts are not Claude's; the kept ratio is what matters. The Part 1 note applies: Claude's tokenizer counts
   more than the proxy, and more so on code, so treat the ratios as approximate.
-- Correctness proxy, no model: a symbol extractor lists public, protected and internal declarations in C#, and
-  `export` plus public or protected members in TypeScript, as (name, line) pairs. It runs on the original file
+- Correctness proxy, no model: a symbol extractor lists public, protected and internal declarations in C# (including indexers,
+  operators and every name in `const int K = 1, L = 2`), and in TypeScript `export` declarations and lists,
+  `export default`, and non-private members of top-level classes (with or without `public`), as (name, line) pairs. It runs on the original file
   and on the view (lines read from the gutter). "Found in view" is the share of original pairs also in the
   view. "Exact files" is the share of files whose two sets are identical. A second check confirms every
   gutter line is the start of the original line with that number.
 - Limitation: the extractor and the view share one lexer, so a mask bug could hide in both. The check proves
   the cut does not drop declarations; it does not prove a model answers better with the view. Part 1 is
   the only evidence on accuracy.
+- What the score covers: declarations named as above, at the right line, plus signatures and import/export
+  lists left whole ("Cut signatures", from the view text alone). It does not cover: members of classes nested
+  in functions or namespaces (not public API, skipped on both sides), return-type object literals
+  (`): Promise<{ ... }> {` may still be elided), a C# `a < b` inside a field initializer (confuses the comma
+  split; `<` and `<<` also confuse it), a class member on a line that continues an expression (guarded only
+  by the previous line ending in an operator), or anything about body content. The signature check shares its import/export pattern with the cut,
+  so it is not fully independent of it.
 
-**Result (2026-11-11, lab `de1a180` plus this change; repos at chargehand `3a25481`, workspace `1a8225b`,
+**Result (2026-11-11, lab `4062de7` plus the review fixes; repos at chargehand `d9e29ac`, workspace `1a8225b`,
 personal-website `bc769d7`).**
 
-| Repo | Lang | Files | Tokens kept (pieces) | Tokens kept (bytes/4) | Symbols | Found in view | Exact files |
-|---|---|---|---|---|---|---|---|
-| chargehand | C# | 1017 | 50.7% | 45.4% | 10092 | 100.00% | 100.0% |
-| chargehand | TS | 256 | 29.2% | 24.3% | 1115 | 100.00% | 100.0% |
-| workspace | C# | 15 | 44.0% | 37.4% | 219 | 100.00% | 100.0% |
-| workspace | TS | 4 | 42.0% | 39.1% | 9 | 100.00% | 100.0% |
-| personal-website | TS | 119 | 33.8% | 30.1% | 331 | 100.00% | 100.0% |
+| Repo | Lang | Files | Tokens kept (pieces) | Tokens kept (bytes/4) | Symbols | Found in view | Exact files | Cut signatures |
+|---|---|---|---|---|---|---|---|---|
+| chargehand | C# | 1019 | 50.7% | 45.4% | 10124 | 100.00% | 100.0% | 0 |
+| chargehand | TS | 256 | 30.8% | 25.8% | 1198 | 100.00% | 100.0% | 0 |
+| workspace | C# | 15 | 44.0% | 37.4% | 221 | 100.00% | 100.0% | 0 |
+| workspace | TS | 4 | 42.0% | 39.1% | 9 | 100.00% | 100.0% | 0 |
+| personal-website | TS | 119 | 34.6% | 30.8% | 332 | 100.00% | 100.0% | 0 |
 
-No file fell back to the full text. All 57,847 gutter lines match the original (chargehand C# 46,071 and TS
-7,767; workspace 876 and 48; personal-website 3,085). Viewing all of chargehand's C# takes about 0.5 s.
+No file fell back to the full text. All gutter lines match the original (about 60,000). Viewing all of
+chargehand's C# takes about 0.3 s. The first version of this table (extractor covering only explicit
+`public` members, `export` declarations, and no signature check) also read 100% while the cut elided
+multi-line signatures and import/export lists in 11 TS files; the extractor was widened and the
+"Cut signatures" column added, and the cut fixed.
 
-**Verdict.** The check passed (worst row 50.7%, recall 100% everywhere) and the stop was not hit. The 100% is
+**Verdict.** The check passed (worst row 50.7%, recall 100% and no cut signatures everywhere) and the stop was not hit. The 100% is
 a statement about declarations, not about answers: a model still has to be tested on the view, which needs
 paid calls and is a separate session. C# keeps more than TS because of attributes, expression-bodied members
 and one-line bodies that stay inline.

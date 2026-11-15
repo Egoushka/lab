@@ -13,6 +13,11 @@ a real project), **killed** (the stop rule hit) or **open**.
 | 02 | [picked-fields](experiments/02-picked-fields/) | Does the view still win when the agent picks its own fields, counting both calls? | open |
 | 03 | [vague-questions](experiments/03-vague-questions/) | Does the pick still work when the question does not name its fields? | killed |
 | 04 | [value-hints](experiments/04-value-hints/) | Does giving the pick the values of few-valued columns fix 03's miss? | open |
+| 05 | [skillgate](experiments/05-skillgate/) | Does `skillgate audit` say anything useful about a skills folder? | open |
+| 06 | [agent-readiness](experiments/06-agent-readiness/) | What does agent-readiness find on a live site that levelset does not? | open |
+| 07 | [backup-verify](experiments/07-backup-verify/) | Does a restore-and-check plan fail loudly on a bad backup? | open |
+| 08 | [lint4sg](experiments/08-lint4sg/) | How many of lint4sg's findings on a working generator are worth acting on? | open |
+| 09 | [quotamax](experiments/09-quotamax/) | Does `quotamax trend` agree with subgate's numbers? | open (blocked) |
 
 ## Rules
 
